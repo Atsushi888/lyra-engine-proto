@@ -2,11 +2,13 @@
 
 import os, json, html, time, streamlit as st
 from persona_floria_ja import get_default_persona  # 現時点ではデフォルト人格として利用
-from llm_router import call_with_fallback
+from personas import get_persona
+# from llm_router import call_with_fallback
 
 
 # ================== 定数（人格から取得） ==================
-persona = get_default_persona()
+# persona = get_default_persona()
+persona = get_persona( "floria_ja" )
 SYSTEM_PROMPT = persona.system_prompt
 STARTER_HINT = persona.starter_hint
 PARTNER_NAME = persona.name
