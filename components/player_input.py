@@ -22,7 +22,7 @@ class PlayerInput:
 
         st.write("あなたの発言を入力:")
 
-        # 🔸 value= を渡さず、key だけで管理する
+        # 🚫 value= は渡さない。key だけで状態を管理させる
         user_text: str = st.text_area(
             label="",
             key=self.TEXT_KEY,
@@ -37,11 +37,10 @@ class PlayerInput:
                 # 空文字だけなら何もしない
                 return ""
 
-            # 次のターン用に入力欄をクリア
+            # ✅ クリアは「送信が押された瞬間」だけ
             st.session_state[self.TEXT_KEY] = ""
 
-            # LyraEngine 側で text_to_send を受け取って LLM に投げる
             return text_to_send
 
-        # 送信されてないとき
+        # 送信されていないとき
         return ""
