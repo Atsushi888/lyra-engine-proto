@@ -1,4 +1,4 @@
-f# lyra_engine.py
+# lyra_engine.py
 import os
 from typing import Any, Dict, List
 
