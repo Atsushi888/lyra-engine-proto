@@ -13,7 +13,7 @@ from llm_router import call_with_fallback
 # import components.debug_panel as debug_panel
 # import components.chat_log as chat_log
 # import components.player_input as player_input
-from components import PreflightChecker, DebugPanel
+from components import PreflightChecker, DebugPanel, ChatLog
 
 # ページ全体の基本設定
 st.set_page_config(page_title="Lyra Engine – フローリア", layout="wide")
@@ -64,7 +64,7 @@ class LyraEngine:
         # UI コンポーネント生成
         self.preflight = PreflightChecker(self.openai_key, self.openrouter_key)
         self.debug_panel = DebugPanel()
-        # self.chat_log = ChatLog(self.partner_name, self.DISPLAY_LIMIT)
+        self.chat_log = ChatLog(self.partner_name, self.DISPLAY_LIMIT)
         # self.player_input = PlayerInput()   # ← ここ追加
 
         # ★ セッション状態の初期化
@@ -97,8 +97,8 @@ class LyraEngine:
             self.debug_panel.render()
 
         # 会話ログ
-        # messages: List[Dict[str, str]] = self.state.get("messages", [])
-        # self.chat_log.render(messages)
+        messages: List[Dict[str, str]] = self.state.get("messages", [])
+        self.chat_log.render(messages)
         
         # 入力欄
         # user_text = self.player_input.render()
