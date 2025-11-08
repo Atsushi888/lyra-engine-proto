@@ -1,5 +1,3 @@
-# components/chat_log.py
-
 from typing import List, Dict
 import streamlit as st
 import html
@@ -10,34 +8,35 @@ class ChatLog:
         self.partner_name = partner_name
         self.display_limit = display_limit
 
-        # CSSの注入
         st.markdown(
             """
             <style>
-            /* 吹き出し外枠（間隔管理） */
             .chat-bubble-container {
                 margin: 10px 0;
             }
-        
-            /* 吹き出し本体 */
+
             .chat-bubble {
                 border: 1px solid #ccc;
                 border-radius: 8px;
-                padding: 4px 10px 8px 10px; /* 上4px, 下8pxに変更 → 名前が上に詰まる */
+
+                /* ← 上の余白を限界まで削る */
+                padding: 0 10px 8px 10px;   /* 上0, 右10, 下8, 左10 */
+
                 margin: 0;
                 background-color: #f9f9f9;
                 white-space: pre-wrap;
                 text-align: left;
-                line-height: 1.55;
+                line-height: 1.5;
             }
-        
-            /* 名前のスタイル */
+
             .chat-name {
                 font-weight: bold;
-                margin-bottom: 2px; /* 名前と本文の距離をわずかに空ける */
-                line-height: 1.2;
+                line-height: 1.0;   /* 1行目の高さを詰める */
+                margin: 0;
+                padding-top: 2px;   /* ほんの少しだけ余裕、もっと詰めたければ 0 に */
+                display: inline-block;
             }
-        
+
             .chat-bubble.assistant {
                 background-color: #f2f2f2;
                 border-color: #999;
@@ -74,13 +73,11 @@ class ChatLog:
 
             safe_txt = html.escape(txt)
 
-            # 吹き出しコンテナ＋本体をまとめて描画
             st.markdown(
                 f"""
                 <div class="chat-bubble-container">
                     <div class="chat-bubble {role_class}">
-                        <div class="chat-name">{name}:</div>
-                        {safe_txt}
+                        <span class="chat-name">{name}:</span><br>{safe_txt}
                     </div>
                 </div>
                 """,
