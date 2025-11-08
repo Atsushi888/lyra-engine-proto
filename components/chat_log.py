@@ -31,9 +31,9 @@ class ChatLog:
 
             .chat-name {
                 font-weight: bold;
-                line-height: 1.0;   /* 1行目の高さを詰める */
+                line-height: 0;   /* 1行目の高さを詰める */
                 margin: 0;
-                padding-top: 2px;   /* ほんの少しだけ余裕、もっと詰めたければ 0 に */
+                padding-top: 0px;   /* ほんの少しだけ余裕、もっと詰めたければ 0 に */
                 display: inline-block;
             }
 
