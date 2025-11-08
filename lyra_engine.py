@@ -139,11 +139,8 @@ class LyraEngine:
             self.state["messages"] = updated_messages
             self.state["llm_meta"] = meta
 
-            # ★ 入力欄をクリア
-            st.session_state[PlayerInput.KEY] = ""
-
             # ★ 次のターンでは入力欄までスクロールしてもらう
-            # self.state["scroll_to_input"] = True
+            self.state["scroll_to_input"] = True
 
             # ページを「丸ごと」描き直す
             st.rerun()
