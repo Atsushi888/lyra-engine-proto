@@ -14,22 +14,30 @@ class ChatLog:
         st.markdown(
             """
             <style>
-            /* 1人分の吹き出し全体（上下の間隔担当） */
+            /* 吹き出し外枠（間隔管理） */
             .chat-bubble-container {
-                margin: 10px 0;          /* 吹き出し同士の間隔だけをここで管理 */
+                margin: 10px 0;
             }
-
-            /* 吹き出し本体（内側の余白・枠・左上寄せ担当） */
+        
+            /* 吹き出し本体 */
             .chat-bubble {
                 border: 1px solid #ccc;
                 border-radius: 8px;
-                padding: 6px 10px;       /* 上下左右の内側余白を控えめに */
-                margin: 0;               /* 外側マージンはコンテナに任せる */
+                padding: 4px 10px 8px 10px; /* 上4px, 下8pxに変更 → 名前が上に詰まる */
+                margin: 0;
                 background-color: #f9f9f9;
-                white-space: pre-wrap;   /* 改行保持 */
-                text-align: left;        /* 左寄せ */
+                white-space: pre-wrap;
+                text-align: left;
                 line-height: 1.55;
             }
+        
+            /* 名前のスタイル */
+            .chat-name {
+                font-weight: bold;
+                margin-bottom: 2px; /* 名前と本文の距離をわずかに空ける */
+                line-height: 1.2;
+            }
+        
             .chat-bubble.assistant {
                 background-color: #f2f2f2;
                 border-color: #999;
@@ -71,7 +79,8 @@ class ChatLog:
                 f"""
                 <div class="chat-bubble-container">
                     <div class="chat-bubble {role_class}">
-                        <div style="text-align:left;">{name}:</b><br>{safe_txt}
+                        <div class="chat-name">{name}:</div>
+                        {safe_txt}
                     </div>
                 </div>
                 """,
