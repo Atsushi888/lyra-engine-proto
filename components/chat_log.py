@@ -11,29 +11,28 @@ class ChatLog:
         self.display_limit = display_limit
 
         # CSS を一度だけ注入
-        st.markdown(
-            """
-            <style>
-            .chat-bubble {
-                border: 1px solid #ccc;
-                border-radius: 8px;
-                padding: 10px 14px;
-                margin: 8px 0;
-                background-color: #f9f9f9;
-                white-space: pre-wrap;  /* 改行保持 */
-            }
-            .chat-bubble.assistant {
-                background-color: #f2f2f2;
-                border-color: #999;
-            }
-            .chat-bubble.user {
-                background-color: #e8f2ff;
-                border-color: #66aaff;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown("""
+        <style>
+        .chat-bubble {
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 6px 12px;        /* ← 上下の余白を控えめにして行頭を詰める */
+            margin: 6px 0;
+            background-color: #f9f9f9;
+            white-space: pre-wrap;    /* 改行保持 */
+            text-align: left;         /* 左寄せ */
+            line-height: 1.55;        /* お淑やかで読みやすい行間 */
+        }
+        .chat-bubble.assistant {
+            background-color: #f2f2f2;
+            border-color: #999;
+        }
+        .chat-bubble.user {
+            background-color: #e8f2ff;
+            border-color: #66aaff;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
     def render(self, messages: List[Dict[str, str]]) -> None:
         """会話ログを枠付き＋改行保持で表示"""
