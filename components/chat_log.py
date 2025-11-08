@@ -13,25 +13,28 @@ class ChatLog:
         # CSS を一度だけ注入
         st.markdown("""
         <style>
+        .chat-bubble-container {
+            margin: 16px 0;          /* ← コマ（人物ごとの間隔） */
+            display: flex;
+            justify-content: flex-start;
+        }
+        
         .chat-bubble {
             border: 1px solid #ccc;
             border-radius: 8px;
-        
-            /* 内側の余白をかなり控えめにして、左＆上を詰める */
-            padding: 0px 10px 6px 0px;   /* 上, 右, 下, 左 */
-        
-            /* バブル同士の間隔も少しだけ詰める */
-            margin: 4px 0;
-        
+            padding: 10px 14px;
             background-color: #f9f9f9;
-            white-space: pre-wrap;        /* 改行保持 */
-            text-align: left;             /* 左寄せ */
-            line-height: 1.5;
+            white-space: pre-wrap;
+            max-width: 95%;
+            margin-left: 0;          /* ← 左詰め */
+            margin-top: 0;           /* ← 上詰め */
         }
+        
         .chat-bubble.assistant {
             background-color: #f2f2f2;
             border-color: #999;
         }
+        
         .chat-bubble.user {
             background-color: #e8f2ff;
             border-color: #66aaff;
