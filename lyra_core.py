@@ -1,32 +1,41 @@
 # lyra_core.py
-from typing import Any, Dict, List, Tuple
-import streamlit as st
+
+from typing import Dict, List, Tuple
+from personas.persona_floria_ja import get_persona
+from multi_ai import AIResponder
+
 
 class LyraCore:
-    """Lyra Engine の中核。1ターンの対話を統括する。"""
+    def __init__(self):
+        persona = get_persona()
 
-    def __init__(self, conversation_engine):
-        self.conversation = conversation_engine
+        # 各モデルのResponderを準備
+        self.responder_4o = AIResponder(
+            model_name="gpt-4o",
+            system_prompt=persona.system_prompt,
+            style_hint=persona.style_hint,
+        )
+        self.responder_hermes = AIResponder(
+            model_name="hermes",
+            system_prompt=persona.system_prompt,
+            style_hint=persona.style_hint,
+        )
 
-    def proceed_turn(self, user_text: str, state) -> Tuple[List[Dict[str, str]], Dict[str, Any]]:
-        """ユーザー入力を受けて、LLMとの1ターン会話を処理する。"""
-        # プレイヤーの発言を追加
-        state["messages"].append({"role": "user", "content": user_text})
+    def proceed_turn(self, user_text: str, state) -> Tuple[List[Dict[str, str]], Dict]:
+        messages = state.get("messages", [])
+        messages.append({"role": "user", "content": user_text})
 
-        try:
-            # LLM呼び出し
-            reply_text, meta = self.conversation.generate_reply(state["messages"])
-        except Exception as e:
-            reply_text = f"⚠️ 応答生成中にエラーが発生しました: {e}"
-            meta = {"route": "error", "exception": str(e)}
+        # 各モデルに同じメッセージを渡す
+        reply_4o, meta_4o = self.responder_4o.reply(messages)
+        reply_hermes, meta_hermes = self.responder_hermes.reply(messages)
 
-        # 応答空白時フォールバック
-        if not reply_text or not reply_text.strip():
-            reply_text = "……うまく返答を生成できなかったみたい。もう一度試してくれる？"
+        # メイン出力（例: GPT-4o版）をログに追加
+        messages.append({"role": "assistant", "content": reply_4o})
 
-        # フローリアの返答を追加
-        state["messages"].append({"role": "assistant", "content": reply_text})
+        # 比較情報をまとめて返す
+        meta = {
+            "gpt4o": {"reply": reply_4o, "meta": meta_4o},
+            "hermes": {"reply": reply_hermes, "meta": meta_hermes},
+        }
 
-        # メタ情報を保存
-        state["llm_meta"] = meta
-        return state["messages"], meta
+        return messages, meta
