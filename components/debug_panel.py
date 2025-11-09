@@ -1,34 +1,29 @@
 # components/debug_panel.py
-from typing import Any, Dict, Optional
+
 import streamlit as st
 
 
 class DebugPanel:
-    """LLM 呼び出しメタ情報を出すだけの簡易デバッグパネル"""
+    def render(self, llm_meta):
+        st.subheader("🧠 LLM デバッグ")
 
-    def __init__(self, checkbox_label: str = "🧠 デバッグを表示"):
-        self.checkbox_label = checkbox_label
-        self._meta: Optional[Dict[str, Any]] = None
-
-    def update(self, meta: Optional[Dict[str, Any]]) -> None:
-        """外側から meta だけ更新したいとき用（オプション）"""
-        self._meta = meta
-
-    def render(self, meta: Optional[Dict[str, Any]] = None) -> None:
-        """
-        デバッグパネル描画。
-        - meta が渡されればそれを内部に保存
-        - 渡されなければ最後に保存したもの（_meta）を使う
-        """
-        if meta is not None:
-            self._meta = meta
-
-        show = st.checkbox(self.checkbox_label, False, key="debug_panel_show")
-        if not show:
+        if not llm_meta:
+            st.write("（まだレスポンスがありません）")
             return
 
-        st.markdown("###### 最後の LLM 呼び出し情報")
-        if self._meta:
-            st.json(self._meta)
+        gpt4o = llm_meta.get("gpt4o")
+        hermes = llm_meta.get("hermes")
+
+        if gpt4o and hermes:
+            st.markdown("### モデル比較：GPT-4o vs Hermes")
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("#### GPT-4o")
+                st.text_area("gpt4o_reply", gpt4o["reply"], height=240, label_visibility="collapsed")
+
+            with col2:
+                st.markdown("#### Hermes")
+                st.text_area("hermes_reply", hermes["reply"], height=240, label_visibility="collapsed")
         else:
-            st.info("まだ LLM 呼び出し情報はありません。")
+            st.write("比較用データがありません。")
