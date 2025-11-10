@@ -13,7 +13,7 @@ class MultiAIResponse:
 
     def __init__(
         self,
-        title: str = "マルチAIリプライ",
+        title: str = "マルチAIレスポンス",
     ) -> None:
         self.title = title
 
