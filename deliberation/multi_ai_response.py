@@ -10,8 +10,6 @@ from components.multi_ai_model_viewer import MultiAIModelViewer
 from components.multi_ai_judge_result_view import MultiAIJudgeResultView
 from deliberation.judge_ai import JudgeAI  # パスは環境に合わせて
 
-# components/multi_ai_response.py の先頭あたり
-
 PARTICIPATING_MODELS = {
     "gpt4o": "GPT-4o",
     "hermes": "Hermes",
@@ -34,12 +32,7 @@ class MultiAIResponse:
     """
 
     def __init__(self) -> None:
-        display_config = MultiAIDisplayConfig(
-            initial={
-                "gpt4o": "GPT-4o",
-                "hermes": "Hermes",
-            }
-        )
+        display_config = MultiAIDisplayConfig( initial=PARTICIPATING_MODELS )
         self.model_viewer = MultiAIModelViewer(display_config)
         self.judge_view = MultiAIJudgeResultView()
         self.judge_ai = JudgeAI()
