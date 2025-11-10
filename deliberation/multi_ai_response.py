@@ -10,7 +10,7 @@ import streamlit as st
 from components.multi_ai_display_config import MultiAIDisplayConfig
 from components.multi_ai_model_viewer import MultiAIModelViewer
 from components.multi_ai_judge_result_view import MultiAIJudgeResultView
-from judge_ai import JudgeAI
+from deliberation.judge_ai import JudgeAI
 
 
 # このセッションで「審議に参加させるAI」の一覧
