@@ -1,139 +1,124 @@
-# components/multi_ai_response.py
+# deliberation/multi_ai_response.py
+# マルチAIの応答表示 ＋ Judge 結果表示の中核クラス
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional
+
 import streamlit as st
 
 from components.multi_ai_display_config import MultiAIDisplayConfig
 from components.multi_ai_model_viewer import MultiAIModelViewer
 from components.multi_ai_judge_result_view import MultiAIJudgeResultView
-from deliberation.judge_ai import JudgeAI  # パスは環境に合わせて
+from judge_ai import JudgeAI
 
-PARTICIPATING_MODELS = {
+
+# このセッションで「審議に参加させるAI」の一覧
+PARTICIPATING_MODELS: Dict[str, str] = {
     "gpt4o": "GPT-4o",
     "hermes": "Hermes",
 }
 
+
 class MultiAIResponse:
     """
-    マルチAIレスポンスシステムの中核クラス。
+    マルチAIレスポンスシステムの中核。
 
-    ・表示対象AIの設定（MultiAIDisplayConfig）
-    ・モデル応答ビュー（MultiAIModelViewer）
+    ・モデル応答比較（MultiAIModelViewer）
     ・JudgeAI による審議実行
-    ・審議結果ビュー（MultiAIJudgeResultView）
+    ・審議結果表示（MultiAIJudgeResultView）
 
-    DebugPanel などの上位側は、このクラスに llm_meta を渡して
-    render() を呼ぶだけでよい。
-
-    ※ llm_meta["models"] が無い場合、最後の assistant 発言から
-       GPT-4o の仮 models を組み立てるフォールバックも持つ。
+    DebugPanel 側は、llm_meta を渡して render() を呼ぶだけでよい。
     """
 
-    def __init__(self) -> None:
-        display_config = MultiAIDisplayConfig( initial=PARTICIPATING_MODELS )
+    def __init__(self, title: str = "マルチAIレスポンス") -> None:
+        self.title = title
+
+        # 表示対象AIの設定
+        display_config = MultiAIDisplayConfig(initial=PARTICIPATING_MODELS)
+
+        # ビュー／Judge の初期化
         self.model_viewer = MultiAIModelViewer(display_config)
         self.judge_view = MultiAIJudgeResultView()
         self.judge_ai = JudgeAI()
 
-    # ===== フォールバック: models が無いとき自力で組み立てる =====
-    def _fallback_models_from_state(
-        self,
-        llm_meta: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
+    # ------------------------------------------------------------------
+    # internal helpers
+    # ------------------------------------------------------------------
+    def _empty_judge(self, reason: str = "") -> Dict[str, Any]:
         """
-        llm_meta["models"] が存在しないとき、
-        st.session_state["messages"] から最後の assistant 発言を拾って
-        GPT-4o の仮 models を作る。
-
-        これは「とりあえず裏画面で中身を見たい」ための保険。
-        本命は conversation_engine.py 側で models を詰めること。
+        エラー時や未判定時に使う judge のガワ（ひな型）。
         """
-        try:
-            messages: List[Dict[str, str]] = st.session_state.get("messages", [])
-            last_assistant = None
-            for m in reversed(messages):
-                if m.get("role") == "assistant":
-                    last_assistant = m.get("content", "")
-                    break
-
-            if not last_assistant:
-                return None
-
-            usage_main = llm_meta.get("usage_main") or llm_meta.get("usage") or {}
-
-            models = {
-                "gpt4o": {
-                    "reply": last_assistant,
-                    "usage": usage_main,
-                    "route": llm_meta.get("route", "gpt"),
-                    "model_name": llm_meta.get("model_main", "gpt-4o"),
-                }
-            }
-            return models
-        except Exception:
-            return None
-
-# components/multi_ai_response.py の中
-
-class MultiAIResponse:
-    ...
+        return {
+            "winner": None,
+            "score_diff": 0.0,
+            "comment": reason,
+            "raw": None,
+            "pair": None,
+        }
 
     def _ensure_models(self, llm_meta: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        llm_meta["models"] を取り出す。
+        形式が不正 or 空なら None を返す。
+        """
         models = llm_meta.get("models")
         if isinstance(models, dict) and models:
             return models
         return None
-            
+
     def _ensure_judge(self, llm_meta: Dict[str, Any]) -> Dict[str, Any]:
         """
         llm_meta の状態を見て、必要であれば JudgeAI を実行し、
-        llm_meta["judge"] を埋めて返す。
+        必ず dict 形式の judge を返す（None は返さない）。
         """
         if not isinstance(llm_meta, dict):
-            return {"winner": None, "reason": "llm_meta not available"}
-    
-        # 既に judge が dict で存在すればそのまま使う
+            return self._empty_judge("llm_meta が存在しません。")
+
+        # すでに judge が dict として保存されていればそれを使う
         judge = llm_meta.get("judge")
         if isinstance(judge, dict):
             return judge
-    
-        # models が無い or 少なければ判定できない
-        models = llm_meta.get("models")
+
+        # models が 2 つ未満ならそもそも審議不能
+        models = self._ensure_models(llm_meta)
         if not isinstance(models, dict) or len(models) < 2:
-            return {
-                "winner": None,
-                "reason": "有効なモデル数が不足しています。",
-                "score_diff": 0.0,
-            }
-    
-        # ここで初めて判定実行
+            return self._empty_judge("有効なモデル数が 2 未満のため、審議できません。")
+
+        # ここで JudgeAI を実行
         try:
             judge = self.judge_ai.run(llm_meta)
-            return judge if isinstance(judge, dict) else {
-                "winner": None,
-                "reason": "JudgeAI returned invalid data.",
-                "score_diff": 0.0,
-            }
         except Exception as e:
-            return {
-                "winner": None,
-                "reason": f"JudgeAI 実行中にエラー: {e}",
-                "score_diff": 0.0,
-            }
+            return self._empty_judge(f"JudgeAI 実行中にエラー: {e}")
 
+        if isinstance(judge, dict):
+            # 後続の再表示のために llm_meta にも保存しておく
+            llm_meta["judge"] = judge
+            return judge
+
+        return self._empty_judge("JudgeAI が不正な形式の結果を返しました。")
+
+    # ------------------------------------------------------------------
+    # public
+    # ------------------------------------------------------------------
     def render(self, llm_meta: Optional[Dict[str, Any]]) -> None:
+        """
+        マルチAIレスポンス全体（モデル比較＋審議結果）を描画する。
+        DebugPanel などの上位からは llm_meta を渡して呼ぶだけでよい。
+        """
+        st.markdown(f"### ✒️ {self.title}")
+
         if not isinstance(llm_meta, dict) or not llm_meta:
             st.caption("（まだマルチAIレスポンスはありません）")
             return
 
-        st.markdown("### ✒️ マルチAIレスポンス")
+        # ---- プロンプトプレビュー ----
+        prompt_preview = llm_meta.get("prompt_preview")
+        if isinstance(prompt_preview, str) and prompt_preview.strip():
+            with st.expander("📝 プロンプトプレビュー", expanded=False):
+                st.code(prompt_preview, language="text")
 
-        # プロンプトプレビュー
-        ...
-
-        # モデル応答比較
+        # ---- モデル応答比較 ----
         models = self._ensure_models(llm_meta)
         if models:
             with st.expander("🤝 モデル応答比較", expanded=True):
@@ -141,7 +126,7 @@ class MultiAIResponse:
         else:
             st.caption("（models 情報がありません）")
 
-        # Judge
+        # ---- Judge 結果 ----
         judge = self._ensure_judge(llm_meta)
         with st.expander("⚖️ マルチAI審議結果", expanded=True):
             self.judge_view.render(judge)
