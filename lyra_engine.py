@@ -7,6 +7,7 @@ import streamlit as st
 
 from personas.persona_floria_ja import get_persona
 from components import PreflightChecker, DebugPanel, ChatLog, PlayerInput
+from components.multi_ai_responce import MultiAIResponce
 from conversation_engine import LLMConversation
 from lyra_core import LyraCore
 
@@ -47,7 +48,7 @@ class LyraEngine:
         self.system_prompt = persona.system_prompt
         self.starter_hint = persona.starter_hint
         self.partner_name = persona.name
-        self.style_hint = persona.style_hint  # ← ★ 新規追加
+        self.style_hint = persona.style_hint  # ← ペルソナ側の文体指針
 
         # API キーの取得
         self.openai_key = st.secrets.get(
@@ -76,11 +77,11 @@ class LyraEngine:
             system_prompt=self.system_prompt,
             temperature=0.7,
             max_tokens=800,
-            style_hint=self.style_hint,  # ← ★ personaのstyle_hintを反映
+            style_hint=self.style_hint,
         )
 
         # コア（1ターン会話制御）
-        self.core = LyraCore( self.conversation )
+        self.core = LyraCore(self.conversation)
 
         # UI コンポーネント生成
         self.preflight = PreflightChecker(self.openai_key, self.openrouter_key)
@@ -93,6 +94,7 @@ class LyraEngine:
 
     # ===== セッション初期化 =====
     def _init_session_state(self) -> None:
+        # 会話ログ
         if "messages" not in st.session_state:
             st.session_state["messages"] = []
             if self.starter_hint:
@@ -100,8 +102,13 @@ class LyraEngine:
                     {"role": "assistant", "content": self.starter_hint}
                 )
 
+        # LLM メタ情報
         if "llm_meta" not in st.session_state:
             st.session_state["llm_meta"] = None
+
+        # 裏画面 ON/OFF フラグ
+        if "debug_mode" not in st.session_state:
+            st.session_state["debug_mode"] = False
 
     @property
     def state(self):
@@ -109,17 +116,31 @@ class LyraEngine:
 
     # ===== メインレンダリング =====
     def render(self) -> None:
-        st.write("✅ Lyra Engine 起動テスト：render() まで来てます。")
-
         # Preflight（キー診断）
-        st.write("🛫 PreflightChecker.render() 呼び出し前")
         self.preflight.render()
-        st.write("🛬 PreflightChecker.render() 呼び出し後")
 
-        # デバッグパネル（サイドバー）
-        llm_meta = self.state.get("llm_meta")
+        # サイドバー（裏ビュー切り替え + デバッグパネル）
         with st.sidebar:
+            # 裏画面トグルボタン
+            if st.button("🧠 マルチAI裏ビュー切替"):
+                st.session_state["debug_mode"] = not st.session_state["debug_mode"]
+
+            mode_label = "裏画面 ON" if st.session_state["debug_mode"] else "裏画面 OFF"
+            st.caption(f"現在: {mode_label}")
+
+            # 既存のデバッグパネル（llm_meta の簡易表示など）
+            llm_meta = self.state.get("llm_meta")
             self.debug_panel.render(llm_meta)
+
+        # 表 / 裏 切り替え
+        if st.session_state["debug_mode"]:
+            self.render_backstage()
+        else:
+            self.render_front()
+
+    # ===== 表画面（プレイヤー用：従来のLyra画面） =====
+    def render_front(self) -> None:
+        """いつものフローリア会話画面。"""
 
         # ① 現在の会話ログを表示
         messages: List[Dict[str, str]] = self.state.get("messages", [])
@@ -134,15 +155,27 @@ class LyraEngine:
                     user_text,
                     self.state,
                 )
-        
+
             # 整形後のメッセージを state に反映
             self.state["messages"] = updated_messages
             self.state["llm_meta"] = meta
-            
+
             # （必要ならスクロール用のフラグもここで立てる）
             self.state["scroll_to_input"] = True
 
             st.rerun()
+
+    # ===== 裏画面（開発者用：マルチAIリプライ可視化） =====
+    def render_backstage(self) -> None:
+        """裏画面：マルチAIリプライ可視化ビュー。"""
+
+        st.markdown("## 🎭 Lyra Backstage – Multi AI Responce")
+
+        llm_meta: Dict[str, Any] | None = self.state.get("llm_meta")
+
+        viewer = MultiAIResponce(title="マルチAIリプライ（デバッグ）")
+        viewer.render(llm_meta)
+
 
 # ===== エントリーポイント =====
 if __name__ == "__main__":
