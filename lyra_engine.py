@@ -7,7 +7,7 @@ import streamlit as st
 
 from personas.persona_floria_ja import get_persona
 from components import PreflightChecker, DebugPanel, ChatLog, PlayerInput
-from components.multi_ai_responce import MultiAIResponce
+from components.multi_ai_response import MultiAIResponse
 from conversation_engine import LLMConversation
 from lyra_core import LyraCore
 
@@ -169,11 +169,11 @@ class LyraEngine:
     def render_backstage(self) -> None:
         """裏画面：マルチAIリプライ可視化ビュー。"""
 
-        st.markdown("## 🎭 Lyra Backstage – Multi AI Responce")
+        st.markdown("## 🎭 Lyra Backstage – Multi AI Response")
 
         llm_meta: Dict[str, Any] | None = self.state.get("llm_meta")
 
-        viewer = MultiAIResponce(title="マルチAIリプライ（デバッグ）")
+        viewer = MultiAIResponse(title="マルチAIレスポンス（デバッグ）")
         viewer.render(llm_meta)
 
 
