@@ -106,28 +106,34 @@ class LLMConversation:
             for m in messages
         )
 
-        # usage 情報（あれば）
+        # usage 情報
         usage_main = meta.get("usage_main") or meta.get("usage") or {}
-
-        # ===== マルチ AI 用 models 構築 =====
-        models: Dict[str, Any] = {}
-
-        # GPT-4o 本体
-        models["gpt4o"] = {
+        
+        # 各モデルの結果を統一フォーマットに
+        gpt_entry = {
             "reply": text,
             "usage": usage_main,
             "route": meta.get("route", "gpt"),
             "model_name": meta.get("model_main", "gpt-4o"),
         }
-
-        # Hermes は現状ダミー：同じ内容を別モデル扱い
-        models["hermes"] = {
-            "reply": text,
-            "usage": usage_main,
-            "route": "dummy-hermes",
-            "model_name": "Hermes (dummy)",
+        
+        # 将来的に別AI（Hermesなど）を差し込む場合もここで集約
+        models = {
+            "gpt4o": gpt_entry,
+            "hermes": {
+                "reply": text,  # ダミーまたは実際のhermes_text
+                "usage": usage_main,
+                "route": "dummy-hermes",
+                "model_name": "Hermes (dummy)",
+            },
         }
-
-        meta["models"] = models
-
-        return text, meta
+        
+        # meta に他のキーが混在しないように、必要最小限に再構築
+        meta_clean = {
+            "models": models,
+            "prompt_preview": "\n\n".join(
+                f"[{m['role']}] {m['content'][:300]}" for m in messages
+            ),
+        }
+        
+        return text, meta_clean
