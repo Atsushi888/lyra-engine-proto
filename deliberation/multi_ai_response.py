@@ -10,6 +10,12 @@ from components.multi_ai_model_viewer import MultiAIModelViewer
 from components.multi_ai_judge_result_view import MultiAIJudgeResultView
 from deliberation.judge_ai import JudgeAI  # パスは環境に合わせて
 
+# components/multi_ai_response.py の先頭あたり
+
+PARTICIPATING_MODELS = {
+    "gpt4o": "GPT-4o",
+    "hermes": "Hermes",
+}
 
 class MultiAIResponse:
     """
