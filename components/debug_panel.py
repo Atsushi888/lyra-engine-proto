@@ -4,7 +4,7 @@ from typing import Any, Dict
 import json
 import streamlit as st
 
-from deliberation.multi_ai_response import MultiAIResponse
+# from deliberation.multi_ai_response import MultiAIResponse
 
 
 class DebugPanel:
@@ -46,7 +46,7 @@ class DebugPanel:
 
         # --- マルチAIレスポンス（表示も審議も全部ここに委譲） ---
         with st.expander("🧪 マルチAIレスポンスシステム", expanded=True):
-            self.multi_ai_response.render(llm_meta)
+            # self.multi_ai_response.render(llm_meta)
 
         # --- raw llm_meta ---
         with st.expander("raw llm_meta (開発者向け)", expanded=False):
