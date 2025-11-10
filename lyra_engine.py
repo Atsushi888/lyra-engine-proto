@@ -114,68 +114,47 @@ class LyraEngine:
     def state(self):
         return st.session_state
 
-    # ===== メインレンダリング =====
     def render(self) -> None:
-        # Preflight（キー診断）
+        """エントリーポイント"""
         self.preflight.render()
 
-        # サイドバー（裏ビュー切り替え + デバッグパネル）
+        # トグルボタンで裏画面切替
         with st.sidebar:
-            # 裏画面トグルボタン
-            if st.button("🧠 マルチAI裏ビュー切替"):
-                st.session_state["debug_mode"] = not st.session_state["debug_mode"]
+            if st.button("🧠 Backstage 切替"):
+                st.session_state["debug_mode"] = not st.session_state.get("debug_mode", False)
+            mode = "ON" if st.session_state.get("debug_mode", False) else "OFF"
+            st.caption(f"Backstage: {mode}")
 
-            mode_label = "裏画面 ON" if st.session_state["debug_mode"] else "裏画面 OFF"
-            st.caption(f"現在: {mode_label}")
-
-            # 既存のデバッグパネル（llm_meta の簡易表示など）
-            # llm_meta = self.state.get("llm_meta")
-            # self.debug_panel.render(llm_meta)
-
-        # 表 / 裏 切り替え
-        if st.session_state["debug_mode"]:
+        # 裏画面モードなら DebugPanel を呼ぶ
+        if st.session_state.get("debug_mode", False):
             self.render_backstage()
         else:
             self.render_front()
 
-    # ===== 表画面（プレイヤー用：従来のLyra画面） =====
     def render_front(self) -> None:
-        """いつものフローリア会話画面。"""
-
-        # ① 現在の会話ログを表示
+        """通常プレイ画面"""
         messages: List[Dict[str, str]] = self.state.get("messages", [])
         self.chat_log.render(messages)
 
-        # ② プレイヤー入力欄
         user_text = self.player_input.render()
-
         if user_text:
             with st.spinner("フローリアが返事を考えています…"):
-                updated_messages, meta = self.core.proceed_turn(
-                    user_text,
-                    self.state,
-                )
-
-            # 整形後のメッセージを state に反映
+                updated_messages, meta = self.core.proceed_turn(user_text, self.state)
             self.state["messages"] = updated_messages
             self.state["llm_meta"] = meta
-
-            # （必要ならスクロール用のフラグもここで立てる）
-            self.state["scroll_to_input"] = True
-
             st.rerun()
 
-    # ===== 裏画面（開発者用：マルチAIリプライ可視化） =====
     def render_backstage(self) -> None:
-        """裏画面：マルチAIリプライ可視化ビュー。"""
+        """裏画面（デバッグ＆審議ビュー）"""
+        st.markdown("## 🎛 Lyra Backstage – Multi AI Debug View")
 
-        st.markdown("## 🎭 Lyra Backstage – Multi AI Response")
+        llm_meta = self.state.get("llm_meta")
+        if not llm_meta:
+            st.caption("（まだ会話履歴がありません）")
+            return
 
-        llm_meta: Dict[str, Any] | None = self.state.get("llm_meta")
-
-        viewer = MultiAIResponse(title="マルチAIレスポンス（デバッグ）")
-        viewer.render(llm_meta)
-
+        # ここで DebugPanel を呼ぶ
+        self.debug_panel.render(llm_meta)
 
 # ===== エントリーポイント =====
 if __name__ == "__main__":
