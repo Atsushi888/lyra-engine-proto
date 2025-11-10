@@ -77,21 +77,45 @@ class LLMConversation:
     ) -> Tuple[str, Dict[str, Any]]:
         """
         会話履歴を受け取り、LLM応答テキストとメタ情報を返す。
+        MultiAIResponse 用に llm_meta['models'] を構築して返す。
         """
         messages = self.build_messages(history)
 
+        # ==== メイン応答 (GPT-4o) ====
         text, meta = call_with_fallback(
             messages=messages,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
         )
 
-        # DebugPanel用の情報を追記
-        meta = dict(meta)
+        meta = dict(meta)  # 安全に編集できるようにコピー
+
+        # ===== DebugPanel / MultiAIResponse 用情報 =====
         meta["prompt_messages"] = messages
         meta["prompt_preview"] = "\n\n".join(
             f"[{m['role']}] {m['content'][:300]}"
             for m in messages
         )
+
+        # ==== ★ ここが重要：MultiAIResponseへのデータ供給 ====
+        # 将来的に Hermes や Claude を追加しやすいように dict 形式で構築
+        usage_main = meta.get("usage_main") or meta.get("usage") or {}
+
+        meta["models"] = {
+            "gpt4o": {
+                "reply": text,
+                "usage": usage_main,
+                "route": meta.get("route", "gpt"),
+                "model_name": meta.get("model_main", "gpt-4o"),
+            }
+        }
+
+        # Hermesなど別AIを追加する場合は、ここに追記すればOK。
+        # meta["models"]["hermes"] = {
+        #     "reply": hermes_text,
+        #     "usage": hermes_usage,
+        #     "route": "hermes",
+        #     "model_name": "Mistral-Hermes-3",
+        # }
 
         return text, meta
