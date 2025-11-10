@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 
 
-from components.multi_ai_response import PARTICIPATING_MODELS
+from deliberation.multi_ai_response import PARTICIPATING_MODELS
 from llm_router import call_with_fallback  # GPT-4o 用（既存）
 # 将来、本物 Hermes を呼ぶときは:
 # from llm_router import call_hermes
