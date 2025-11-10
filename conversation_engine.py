@@ -1,7 +1,7 @@
 # conversation_engine.py — LLM 呼び出しを統括する会話エンジン層
 
 from typing import Any, Dict, List, Tuple
-from diberation.ai_response_collector import MultiAIResponseCollector
+from deliberation.ai_response_collector import MultiAIResponseCollector
 from components.multi_ai_response import PARTICIPATING_MODELS
 
 
