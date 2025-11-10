@@ -16,3 +16,4 @@ class DebugPanel:
 
         # モデルごとの返答ビューは専用クラスにお任せ
         self.model_viewer.render(llm_meta)
+        self.model_viewer._render_judge( llm_meta )
