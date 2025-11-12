@@ -85,22 +85,30 @@ class AuthManager:
         ログインフォームを描画して状態を session_state に反映する。
         streamlit_authenticator の API 差異に備えてフォールバック実装。
         """
+        # location を正規化
+        allowed = {"main", "sidebar", "unrendered"}
+        loc = (location or "main").lower()
+        if loc not in allowed:
+            loc = "main"
+    
         try:
+            # 新API系（kwargs）
             name, auth_status, username = self.authenticator.login(
-                location=location,
+                location=loc,
                 key="lyra_auth_login",
                 fields={"Form name": "Lyra System ログイン"},
             )
         except TypeError:
-            # 古いバージョンの引数シグネチャ
+            # 旧API系：キーワードで明示的に渡す（positional はズレやすい）
             name, auth_status, username = self.authenticator.login(
-                "Lyra System ログイン", location
+                "Lyra System ログイン",
+                location=loc  # ← ここも kwargs にする
             )
-
+    
         st.session_state["authentication_status"] = auth_status
         st.session_state["name"] = name
         st.session_state["username"] = username
-
+    
         if auth_status is True:
             st.success(f"Logged in: {name or username}")
         elif auth_status is False:
