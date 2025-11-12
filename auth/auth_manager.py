@@ -1,72 +1,47 @@
-# auth/auth_manager.py
-from __future__ import annotations
-from dataclasses import dataclass
-from typing import Any, Tuple
-import json
+# 先頭の import から json はもう不要
+# import json  ← これも削除可
+from collections.abc import Mapping
 import streamlit as st
 import streamlit_authenticator as stauth
-
-@dataclass
-class AuthResult:
-    status: Any
-    username: str | None
+from .roles import Role
 
 class AuthManager:
     def __init__(self) -> None:
-        # secrets から credentials を辞書で取得（.toml → dict）
-        raw_creds = st.secrets.get("credentials")
-        if not isinstance(raw_creds, dict):
-            # toml 全体を JSON 経由で dict 化（型ブレ対策）
-            raw_creds = json.loads(json.dumps(st.secrets["credentials"]))
-        cookie = st.secrets.get("cookie", {})
-        self.cookie_name = cookie.get("name", "lyra_auth")
-        self.cookie_key  = cookie.get("key",  "some_random_secret_key")
-        self.cookie_expiry = int(cookie.get("expiry_days", 30))
+        # --- Secrets → 純粋な dict へ変換するヘルパ ---
+        def to_plain(obj):
+            if isinstance(obj, Mapping):
+                return {k: to_plain(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [to_plain(v) for v in obj]
+            return obj
 
-        # streamlit-authenticator 0.4系/0.3系 互換
+        # ✨ ここを修正：JSON 経由をやめてプレーン化する
+        credentials = to_plain(st.secrets["credentials"])
+        cookie_conf = to_plain(st.secrets.get("cookie", {}))
+        preauth    = to_plain(st.secrets.get("preauthorized", {}))
+
         self.authenticator = stauth.Authenticate(
-            raw_creds,
-            self.cookie_name,
-            self.cookie_key,
-            self.cookie_expiry,
+            credentials=credentials,
+            cookie_name=cookie_conf.get("name", "lyra_auth"),
+            key=cookie_conf.get("key", "lyra_secret"),
+            cookie_expiry_days=int(cookie_conf.get("expiry_days", 30)),
+            preauthorized=preauth.get("emails", []),
         )
 
-    # --- 互換ログイン: location と 戻り値 どちらも吸収 ---
-    def render_login(self, *, form_name: str = "Lyra System ログイン",
-                     location: str = "main") -> AuthResult:
-        if location not in ("main", "sidebar", "unrendered"):
-            location = "main"
-
-        try:
-            ret = self.authenticator.login(form_name, location=location)
-        except TypeError:
-            # 古い版で location を受けない
-            ret = self.authenticator.login(form_name)
-
-        name = username = None
-        auth_status = None
-
-        if isinstance(ret, tuple):
-            # 典型: (name, authentication_status, username)
-            if len(ret) == 3:
-                name, auth_status, username = ret
-            elif len(ret) == 2:
-                auth_status, username = ret
-        else:
-            auth_status = getattr(ret, "authentication_status", None)
-            username    = getattr(ret, "username", None)
-            name        = getattr(ret, "name", None)
-
-        st.session_state["auth_status"] = auth_status
-        st.session_state["auth_user"] = username
-        return AuthResult(status=auth_status or "unauthenticated", username=username)
+    def render_login(self, location: str = "main"):
+        # stauth は 'main' | 'sidebar' | 'unrendered' のみ許容
+        loc = location if location in ("main", "sidebar", "unrendered") else "main"
+        name, auth_status, username = self.authenticator.login("Lyra System ログイン", location=loc)
+        return type("AuthResult", (), {"name": name, "status": auth_status, "username": username})
 
     def role(self) -> int:
-        # ロールは secrets の credentials.usernames.<id>.role を読む想定
-        username = st.session_state.get("auth_user")
-        creds = st.secrets.get("credentials", {}).get("usernames", {})
-        role_map = {"ADMIN": 2, "USER": 1, "DEV": 2}
-        if isinstance(creds, dict) and username in creds:
-            role = creds[username].get("role", "USER")
-            return role_map.get(str(role).upper(), 1)
-        return 0  # 未ログイン
+        user = st.session_state.get("username")
+        if not user:
+            return Role.ANON
+        # secrets からロールを取得
+        try:
+            role_str = st.secrets["credentials"]["usernames"][user]["role"]
+        except Exception:
+            return Role.USER
+        mapping = {"ADMIN": Role.ADMIN, "USER": Role.USER}
+        return mapping.get(str(role_str).upper(), Role.USER)
