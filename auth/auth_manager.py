@@ -1,111 +1,69 @@
 # auth/auth_manager.py
-
 from __future__ import annotations
-
-from copy import deepcopy
-from typing import Dict, Optional, Tuple
-
 import streamlit as st
 import streamlit_authenticator as stauth
+from dataclasses import dataclass
+from importlib.metadata import version as pkg_version
+from auth.roles import Role
 
-from .roles import Role
-
-
-def _to_plain_dict(obj) -> Dict:
-    """
-    st.secrets は Secrets オブジェクト（辞書ライク）なので、
-    streamlit_authenticator に渡す前に通常の dict に落とす。
-    ネストされた要素もできるだけ dict 化して返す。
-    """
-    if hasattr(obj, "to_dict"):
-        return obj.to_dict()  # type: ignore[attr-defined]
-    if isinstance(obj, dict):
-        return {k: _to_plain_dict(v) for k, v in obj.items()}
-    return deepcopy(obj)
-
+@dataclass
+class _AuthState:
+    name: str | None = None
+    username: str | None = None
+    authenticated: bool | None = None
 
 class AuthManager:
-    """
-    Streamlit 認証ラッパー。
-    - st.secrets から資格情報（credentials / cookie）を読み取り
-    - streamlit_authenticator を初期化
-    - 役割（Role）を取得できるようにする
-    """
-
     def __init__(self) -> None:
-        if "credentials" not in st.secrets:
-            raise RuntimeError("st.secrets['credentials'] が見つかりません。secrets.toml を設定してください。")
-
-        self.credentials: Dict = _to_plain_dict(st.secrets["credentials"])
-        self.cookie: Dict = _to_plain_dict(st.secrets.get("cookie", {}))
-
+        self._state = _AuthState()
+        # st.secrets["credentials"] をそのまま渡す前提
         self.authenticator = stauth.Authenticate(
-            credentials=self.credentials,
-            cookie_name=self.cookie.get("name", "lyra_auth"),
-            key=self.cookie.get("key", "change_me"),
-            cookie_expiry_days=int(self.cookie.get("expiry_days", 30)),
+            credentials=st.secrets["credentials"],
+            cookie_name=st.secrets["cookie"]["name"],
+            cookie_key=st.secrets["cookie"]["key"],
+            cookie_expiry_days=int(st.secrets["cookie"].get("expiry_days", 30)),
         )
+        # ライブラリのバージョンで分岐準備
+        try:
+            self._ver = pkg_version("streamlit-authenticator")
+        except Exception:
+            self._ver = "0.0.0"
 
-    # ------------------------------
-    # ロール判定
-    # ------------------------------
-    def _role_from_username(self, username: Optional[str]) -> Role:
-        if not username:
-            return Role.GUEST
-
-        rec = self.credentials.get("usernames", {}).get(username, {})
-        key = str(rec.get("role", "USER")).upper()
-
-        mapping = {
-            "ADMIN": Role.ADMIN,
-            "USER": Role.USER,
-            "DEV": Role.DEV,
-            "DEVELOPER": Role.DEV,
-            "GUEST": Role.GUEST,
-        }
-        return mapping.get(key, Role.USER)
-
-    def role(self) -> Role:
-        """現在ログイン中ユーザーの Role（未ログインなら GUEST）"""
-        if not st.session_state.get("authentication_status"):
-            return Role.GUEST
-        return self._role_from_username(st.session_state.get("username"))
-
-    def current_user_display(self) -> str:
-        """表示名（未ログインなら空）"""
-        if not st.session_state.get("authentication_status"):
-            return ""
-        return str(st.session_state.get("name") or st.session_state.get("username") or "")
-
-    # ------------------------------
-    # 画面部品
-    # ------------------------------
     def render_login(self, location: str = "main") -> None:
-        # 受け取った location を正規化
         allowed = {"main", "sidebar", "unrendered"}
         loc = (location or "main").strip().lower()
         if loc not in allowed:
             loc = "main"
-    
+
+        # v0.4.0+ は kwargs 指定、旧版は位置引数。両対応で呼ぶ。
         try:
-            # 新しめの streamlit-authenticator（kwargs 版）
+            if self._ver >= "0.4.0":
+                name, auth_status, username = self.authenticator.login(
+                    location=loc,
+                    key="lyra_auth_login",
+                    fields={"Form name": "Lyra System ログイン"},
+                )
+            else:
+                # 旧版は (form_name, location) の順で位置引数
+                name, auth_status, username = self.authenticator.login(
+                    "Lyra System ログイン",
+                    loc,  # ← ここは **文字列リテラルではなく変数** を渡す
+                )
+        except TypeError:
+            # 念のためのフォールバック（kwargs 版に倒す）
             name, auth_status, username = self.authenticator.login(
                 location=loc,
                 key="lyra_auth_login",
                 fields={"Form name": "Lyra System ログイン"},
             )
-        except TypeError:
-            # 旧版（位置引数のみ）
-            # ※ここで **説明文ではなく `loc` を渡す** のが大事
-            name, auth_status, username = self.authenticator.login(
-                "Lyra System ログイン",  # form_name
-                loc                      # ← 'main' / 'sidebar' / 'unrendered'
-            )
-    
+
         st.session_state["authentication_status"] = auth_status
         st.session_state["name"] = name
         st.session_state["username"] = username
-    
+
+        self._state.name = name
+        self._state.username = username
+        self._state.authenticated = auth_status
+
         if auth_status is True:
             st.success(f"Logged in: {name or username}")
         elif auth_status is False:
@@ -113,23 +71,14 @@ class AuthManager:
         else:
             st.info("メール / パスワードを入力してください。")
 
-    def render_logout(self, location: str = "sidebar") -> None:
-        """ログアウトボタンを表示"""
-        try:
-            self.authenticator.logout(location=location, key="lyra_auth_logout")
-        except TypeError:
-            self.authenticator.logout("Logout", location)
+    def role(self) -> Role:
+        # 簡易: secrets の role を参照（未設定は USER）
+        if st.session_state.get("authentication_status") is True:
+            uname = st.session_state.get("username")
+            cred = st.secrets["credentials"]["usernames"].get(uname, {})
+            role_name = str(cred.get("role", "USER")).upper()
+            return Role.from_str(role_name)
+        return Role.GUEST
 
-    # ------------------------------
-    # ガード
-    # ------------------------------
-    def require(self, min_role: Role) -> Role:
-        """
-        画面の先頭で呼び出し、min_role 未満ならログイン画面を出して停止する。
-        戻り値は現在の Role。
-        """
-        r = self.role()
-        if r < min_role:
-            self.render_login(location="main")
-            st.stop()
-        return r
+    def logout(self) -> None:
+        self.authenticator.logout("Logout", "sidebar")
