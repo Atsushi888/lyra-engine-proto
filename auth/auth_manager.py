@@ -38,13 +38,33 @@ class AuthManager:
         )
 
     def render_login(self) -> AuthResult:
-        name, auth_status, username = self.authenticator.login(
-            "Lyra System ログイン", location="main"
-        )
+        # --- 引数: location の有無に両対応 ---
+        try:
+            ret = self.authenticator.login("Lyra System ログイン", location="main")
+        except TypeError:
+            # 古い/新しい版の差異で location を受けないケース
+            ret = self.authenticator.login("Lyra System ログイン")
+    
+        # --- 戻り値: タプル / オブジェクト の両対応 ---
+        name = username = None
+        auth_status = None
+    
+        if isinstance(ret, tuple):
+            # 典型: (name, authentication_status, username)
+            if len(ret) == 3:
+                name, auth_status, username = ret
+            elif len(ret) == 2:
+                auth_status, username = ret
+        else:
+            # 0.4系など: 属性を持つケースを想定
+            auth_status = getattr(ret, "authentication_status", None)
+            username    = getattr(ret, "username", None)
+            name        = getattr(ret, "name", None)
+    
         st.session_state["auth_status"] = auth_status
         st.session_state["auth_user"] = username
         return AuthResult(status=auth_status or "unauthenticated", username=username)
-
+    
     def role(self) -> Role:
         if st.session_state.get("auth_status") != True:
             return Role.GUEST
