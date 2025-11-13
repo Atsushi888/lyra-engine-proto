@@ -5,6 +5,16 @@ from components import PreflightChecker
 
 class UserView:
     def __init__( self ):
+        # APIキー
+        openai_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
+        openrouter_key = st.secrets.get("OPENROUTER_API_KEY", os.getenv("OPENROUTER_API_KEY", ""))
+
+        if not openai_key:
+            st.error("OPENAI_API_KEY が未設定です。Settings → Secrets で設定してください。")
+            st.stop()
+        os.environ["OPENAI_API_KEY"] = openai_key
+        if openrouter_key:
+            os.environ["OPENROUTER_API_KEY"] = openrouter_key        
         self.preflight  = PreflightChecker(openai_key, openrouter_key)
 
     def render(self) -> None:
