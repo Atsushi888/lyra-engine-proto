@@ -26,10 +26,10 @@ class LyraSystem:
 
         # 画面切り替え（PLAY / USER / BACKSTAGE / PRIVATE）
         # 実際の表示ロジックは ModeSwitcher 側に全部委譲する
-        self.switcher = ModeSwitcher(
-            default_key="PLAY",
-            session_key="view_mode",
-        )
+        # self.switcher = ModeSwitcher(
+        #     default_key="PLAY",
+        #     session_key="view_mode",
+        # )
 
     def _render_login_page(self) -> Role:
         """
