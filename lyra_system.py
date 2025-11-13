@@ -1,70 +1,51 @@
-# lyra_system.py — Lyra System エントリポイント
+# lyra_system.py — Lyra 全体を束ねるエントリポイント（認証バイパス開発版）
 
 from __future__ import annotations
 
 import streamlit as st
 
-from auth.auth_manager import AuthManager
 from auth.roles import Role
 from components.mode_switcher import ModeSwitcher
 
 
 class LyraSystem:
     """
-    Lyra 全体を束ねるエントリポイント。
+    開発用エントリポイント。
 
-    - まず AuthManager で認証確認
-    - 未ログインならログイン画面だけを表示
-    - ログイン済みなら ModeSwitcher で 4 画面の切り替えを行う
+    - 認証(AuthManager)は **いったん完全バイパス** して、常に ADMIN 権限として扱う。
+    - 画面切り替え（4ボタン）は ModeSwitcher に全委譲。
+    - 認証周りが安定したら、ここに AuthManager 呼び出しを復活させる。
     """
 
     def __init__(self) -> None:
-        st.set_page_config(page_title="Lyra System", layout="wide")
+        # ページ全体設定
+        st.set_page_config(
+            page_title="Lyra System",
+            layout="wide",
+        )
 
-        # 認証マネージャ
-        self.auth = AuthManager()
+        # ★ 認証は当面使わないので、AuthManager は封印
+        # from auth.auth_manager import AuthManager
+        # self.auth = AuthManager()
 
-        # 画面切り替え（PLAY / USER / BACKSTAGE / PRIVATE）
-        # 実際の表示ロジックは ModeSwitcher 側に全部委譲する
-        # self.switcher = ModeSwitcher(
-        #     default_key="PLAY",
-        #     session_key="view_mode",
-        # )
-
-    def _render_login_page(self) -> Role:
-        """
-        ログインしていない場合の画面。
-        AuthManager.render_login() に UI を任せ、
-        成功したら Role を返す。
-        """
-        st.title("🔒 Lyra System ログイン")
-        st.caption("※ 現在ログインシステムは段階的に導入中です。")
-
-        # AuthManager 側にフォーム描画＆判定を一任
-        result = self.auth.render_login(location="main")
-
-        # render_login の中で成功すると session_state が立つので、
-        # role() をもう一度取り直す
-        role = self.auth.role()
-        return role
+        # 画面切り替えコントローラ
+        self.switcher = ModeSwitcher(
+            default_key="PLAY",
+            session_key="view_mode",
+        )
 
     def run(self) -> None:
-        """
-        メイン実行ループ。
-        - 未ログイン: ログイン画面のみ表示して終了
-        - ログイン済み: ModeSwitcher に画面切り替えを任せる
-        """
-        role = self.auth.role()
+        # ============================
+        #  開発モード：常に ADMIN 扱い
+        # ============================
+        role = Role.ADMIN
 
-        # ログインしていない場合（ANON）はログイン画面へ
-        if role < Role.USER:
-            role = self._render_login_page()
-            # まだ USER に到達していなければここで終了
-            if role < Role.USER:
-                return
+        # サイドバーに「開発中・認証バイパス中」の注意を出しておく
+        with st.sidebar:
+            st.markdown("### 画面切替")
+            st.caption("※ 現在は **認証バイパス中（開発モード）** です。")
 
-        # ここまで来たら USER 以上が保証されているので、
-        # 4 画面切り替えシステムを起動
+        # 画面切り替え本体を実行
         self.switcher.render(user_role=role)
 
 
