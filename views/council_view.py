@@ -15,5 +15,4 @@ class CouncilView:
         self.manager = CouncilManager(st.session_state)
 
     def render(self) -> None:
-        pass
-        # self.manager.render()
+        self.manager.render()
