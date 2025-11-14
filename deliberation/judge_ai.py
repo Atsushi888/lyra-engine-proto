@@ -1,241 +1,180 @@
-# judge_ai.py — マルチAI審議用ジャッジクラス
+# deliberation/judge_ai.py
+# マルチAIの応答を「どれが良いか」判断する審判AI
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
 import json
+import os
+from typing import Any, Dict, List, Tuple
 
-from llm_router import call_judge_gpt5
+from openai import OpenAI, BadRequestError
+
+from deliberation.participating_models import PARTICIPATING_MODELS
+
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# 審判用モデル名（デフォルトは MAIN_MODEL と同じ）
+OPENAI_MAIN_MODEL = os.getenv("OPENAI_MAIN_MODEL", "gpt-4o")
+OPENAI_JUDGE_MODEL = os.getenv("OPENAI_JUDGE_MODEL", OPENAI_MAIN_MODEL)
 
 
 class JudgeAI:
     """
-    複数モデルの応答を比較して「どれがより良いか」を判定するクラス。
+    複数モデルの応答から「どれが良いか」を JSON で判定してくれる審判。
 
-    責務:
-        - llm_meta["models"] から比較対象モデルを選ぶ
-        - LLM（GPT-5.1）に評価を依頼する
-        - winner / score_diff / comment を含む dict を返す
-        - 必要であれば llm_meta["judge"] に結果を書き込む
-
-    UI（Streamlit 等）には一切依存しません。
+    - 入力: llm_meta（llm_router / conversation_engine が組んだもの）
+    - 参照: llm_meta["models"] = { model_key: {"reply": "..."} }
+    - 出力: dict
+        {
+          "winner": "gpt4o" | "hermes" | "judge" | "tie",
+          "score_diff": 0.8,
+          "comment": "～～～"
+        }
     """
 
     def __init__(self) -> None:
-        # 将来的に「審判専用モデル」を差し替えたくなった場合、
-        # JUDGE_MODEL 環境変数で切り替えられるようにしてあります。
-        pass
+        if not OPENAI_API_KEY:
+            raise RuntimeError("OPENAI_API_KEY が設定されていないため JudgeAI を初期化できません。")
+        self.client = OpenAI(api_key=OPENAI_API_KEY)
 
-    def run(self, llm_meta: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """
-        llm_meta を受け取り、models から 2〜3 モデルを選んで審議を行います。
-
-        - models が 2 つ未満の場合は None を返します
-        - 成功時は judge dict を返し、llm_meta["judge"] にも同じものを格納します
-
-        3モデル想定のロジック:
-            1. まず gpt4o vs hermes を比較（あれば）
-            2. その勝者 vs gpt5 を再比較
-            3. 最終勝者を judge["winner"] に格納
-        """
-        if not isinstance(llm_meta, dict):
-            return None
-
-        models = llm_meta.get("models")
+    # ===== 外向け API =====
+    def run(self, llm_meta: Dict[str, Any]) -> Dict[str, Any]:
+        models: Dict[str, Any] = llm_meta.get("models", {})
         if not isinstance(models, dict) or len(models) < 2:
-            return None
-
-        # 3モデルある場合はトーナメント方式
-        if "gpt5" in models and ("gpt4o" in models or "hermes" in models):
-            trace: Dict[str, Any] = {}
-
-            # stage1: gpt4o vs hermes（両方あれば）
-            base_winner: Optional[str] = None
-            stage1_result: Optional[Dict[str, Any]] = None
-
-            if "gpt4o" in models and "hermes" in models:
-                stage1_result = self._evaluate_pair(
-                    prompt=llm_meta.get("prompt_preview") or "",
-                    reply_a=self._get_reply(models, "gpt4o"),
-                    reply_b=self._get_reply(models, "hermes"),
-                    label_a="gpt4o",
-                    label_b="hermes",
-                )
-                base_winner = stage1_result.get("winner") or "gpt4o"
-                trace["stage1"] = stage1_result
-            else:
-                # どちらか片方しかない場合は、それをベース勝者とみなす
-                base_winner = "gpt4o" if "gpt4o" in models else "hermes"
-
-            # stage2: base_winner vs gpt5
-            stage2_result = self._evaluate_pair(
-                prompt=llm_meta.get("prompt_preview") or "",
-                reply_a=self._get_reply(models, base_winner),
-                reply_b=self._get_reply(models, "gpt5"),
-                label_a=base_winner,
-                label_b="gpt5",
-            )
-            trace["stage2"] = stage2_result
-
-            # 最終結果は stage2 の値を表に出す
-            final = dict(stage2_result)
-            final["trace"] = trace
-
-            llm_meta["judge"] = final
-            return final
-
-        # 2モデルしかない / gpt5 がいない場合は、従来どおり 1 回比較
-        a_key, b_key = self._choose_pair(models)
-        prompt = llm_meta.get("prompt_preview") or ""
-
-        judge = self._evaluate_pair(
-            prompt=prompt,
-            reply_a=self._get_reply(models, a_key),
-            reply_b=self._get_reply(models, b_key),
-            label_a=a_key,
-            label_b=b_key,
-        )
-
-        llm_meta["judge"] = judge
-        return judge
-
-    # ------------------------------------------------------------
-
-    def _get_reply(self, models: Dict[str, Any], key: str) -> str:
-        info = models.get(key) or {}
-        return str(info.get("reply") or info.get("text") or "")
-
-    def _choose_pair(self, models: Dict[str, Any]) -> Tuple[str, str]:
-        """
-        比較対象とする 2 モデルのキーを選びます。
-
-        優先順位:
-            1. "gpt4o" と "hermes" の組み合わせが両方あれば固定でそれを使う
-            2. そうでなければ models の先頭 2 件
-        """
-        if "gpt4o" in models and "hermes" in models:
-            return "gpt4o", "hermes"
-
-        keys = list(models.keys())
-        if len(keys) >= 2:
-            return keys[0], keys[1]
-
-        # ここに来るのは len(models) < 2 のときだけですが、
-        # 型安全のため一応同じキーを返しておきます。
-        return keys[0], keys[0]
-
-    def _evaluate_pair(
-        self,
-        prompt: str,
-        reply_a: str,
-        reply_b: str,
-        label_a: str,
-        label_b: str,
-    ) -> Dict[str, Any]:
-        """
-        実際に LLM（GPT-5.1）に A/B 比較を依頼し、判定結果を dict で返します。
-
-        戻り値の例:
-            {
-                "winner": "gpt4o",
-                "score_diff": 0.6,
-                "comment": "...",
-                "raw_text": "<LLM の生出力>",
-                "raw_json": {...},   # パースに成功した場合のみ
-                "route": "judge-gpt5",
-                "pair": {"A": "gpt4o", "B": "hermes"},
+            return {
+                "winner": "none",
+                "score_diff": 0.0,
+                "comment": "比較対象モデルが 2 つ未満のため、審判を実行しませんでした。",
+                "raw_text": "",
+                "parsed": None,
             }
-        """
-        system_prompt = (
-            "あなたは物語文の審査員です。\n"
-            "同じプロンプトに対する 2 つの応答 A / B を比較し、"
-            "どちらがより優れているかを判定してください。\n"
-            "評価軸の例:\n"
-            "  - 文体の自然さ\n"
-            "  - 情景描写の豊かさ\n"
-            "  - 感情表現の説得力\n"
-            "  - これまでの文脈との整合性\n"
-            "\n"
-            "必ず次の JSON 形式だけを出力してください:\n"
-            "{\n"
-            '  \"winner\": \"A\" または \"B\",\n'
-            '  \"score_diff\": 0.0〜1.0 の数値,\n'
-            '  \"comment\": \"日本語で 1〜3 文の理由\"\n'
-            "}\n"
-        )
 
-        user_content = (
-            "【プロンプト】\n"
-            f"{prompt}\n\n"
-            "【応答A】\n"
-            f"{reply_a}\n\n"
-            "【応答B】\n"
-            f"{reply_b}\n\n"
-            "上記を比較し、指定された JSON 形式のみを出力してください。"
-        )
+        messages = self._build_messages(models)
+        raw_text, ok, parsed = self._call_judge(messages)
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content},
-        ]
+        if not ok or not isinstance(parsed, dict):
+            # 失敗時は簡単な fallback
+            return {
+                "winner": "none",
+                "score_diff": 0.0,
+                "comment": "Judge モデルから有効な JSON を得られませんでした。",
+                "raw_text": raw_text,
+                "parsed": parsed,
+            }
 
-        # ★ 審判は GPT-5.1 固定（llm_router.call_judge_gpt5）
-        text, meta = call_judge_gpt5(
-            messages=messages,
-            temperature=0.0,
-            max_tokens=300,
-        )
-
-        parsed = self._safe_parse_json(text)
-
-        result: Dict[str, Any] = {
-            "winner": None,
-            "score_diff": 0.0,
-            "comment": "",
-            "raw_text": text,
-            "raw_json": parsed if isinstance(parsed, dict) else None,
-            "route": meta.get("route"),
-            "pair": {"A": label_a, "B": label_b},
+        # parsed に winner などが入っている前提
+        result = {
+            "winner": parsed.get("winner", "none"),
+            "score_diff": parsed.get("score_diff", 0.0),
+            "comment": parsed.get("comment", ""),
+            "raw_text": raw_text,
+            "parsed": parsed,
         }
-
-        if isinstance(parsed, dict):
-            winner_raw = parsed.get("winner")
-            if winner_raw == "A":
-                result["winner"] = label_a
-            elif winner_raw == "B":
-                result["winner"] = label_b
-
-            try:
-                result["score_diff"] = float(parsed.get("score_diff", 0.0))
-            except Exception:
-                result["score_diff"] = 0.0
-
-            comment = parsed.get("comment")
-            if isinstance(comment, str):
-                result["comment"] = comment.strip()
-
-        # winner が決まらなかった場合のフォールバック
-        if result["winner"] is None:
-            result["winner"] = label_a
-            result["score_diff"] = 0.0
-            if not result["comment"]:
-                result["comment"] = (
-                    "JSON の解析に失敗したため、暫定的に A 側を選択しました。"
-                )
-
         return result
 
-    def _safe_parse_json(self, text: str) -> Optional[Dict[str, Any]]:
+    # ===== プロンプト構築 =====
+    def _build_messages(self, models: Dict[str, Any]) -> List[Dict[str, str]]:
         """
-        LLM の出力から JSON らしき部分を抜き出してパースする簡易ヘルパ。
+        各モデルの応答を A, B, C... として列挙し、
+        どれが良いか JSON で答えてもらう。
         """
+
+        # キーの順序は PARTICIPATING_MODELS をベースに整える
+        ordered_keys: List[str] = []
+        for k in PARTICIPATING_MODELS.keys():
+            if k in models:
+                ordered_keys.append(k)
+        # 念のため、その他のキーも後ろに追加
+        for k in models.keys():
+            if k not in ordered_keys:
+                ordered_keys.append(k)
+
+        # A, B, C... に割り当て
+        label_map: Dict[str, str] = {}
+        rev_label_map: Dict[str, str] = {}
+        label_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        for idx, key in enumerate(ordered_keys):
+            if idx >= len(label_chars):
+                break
+            label = label_chars[idx]
+            label_map[label] = key
+            rev_label_map[key] = label
+
+        lines: List[str] = []
+        lines.append(
+            "あなたは複数の AI 応答を比較し、物語としてより優れているものを選ぶ審判です。"
+            "それぞれの応答は同じプロンプトに対する別モデルからの返答です。"
+            "感情描写・文体の自然さ・キャラクター性・一貫性などを総合的に評価してください。"
+        )
+        lines.append("")
+        lines.append("各応答にはラベル A, B, C... が割り当てられています。")
+        lines.append("それぞれを読み比べ、もっとも良いと判断したラベルを 1 つ選んでください。")
+        lines.append("")
+        lines.append("=== 応答一覧 ===")
+
+        for label, key in label_map.items():
+            info = models.get(key, {})
+            reply = str(info.get("reply") or "").strip()
+            model_name = str(info.get("model_name") or key)
+            lines.append(f"[{label}] model={model_name}")
+            lines.append(reply)
+            lines.append("")
+
+        lines.append(
+            "=== 出力フォーマット ===\n"
+            "次の JSON だけを返してください（説明文やマークダウンは付けないでください）。\n"
+            "{\n"
+            '  "winner": "A" または "B" など、一番良いと判断したラベル,\n'
+            '  "score_diff": 0.0 〜 1.0 程度のスコア差（自信の度合い）, \n'
+            '  "comment": "日本語で、なぜそれを選んだかの短い説明"\n'
+            "}\n"
+            "同点で優劣がつけられない場合は winner を \"tie\" にしてください。"
+        )
+
+        system_prompt = (
+            "あなたは物語文章の品質を評価する審判 AI です。"
+            "指示された JSON 形式のみを返してください。"
+        )
+
+        messages: List[Dict[str, str]] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": "\n".join(lines)},
+        ]
+        return messages
+
+    # ===== モデル呼び出し =====
+    def _call_judge(self, messages: List[Dict[str, str]]) -> Tuple[str, bool, Any]:
         try:
-            stripped = text.strip()
-            start = stripped.find("{")
-            end = stripped.rfind("}")
-            if start == -1 or end == -1 or end <= start:
-                return None
-            json_str = stripped[start : end + 1]
-            return json.loads(json_str)
-        except Exception:
-            return None
+            resp = self.client.chat.completions.create(
+                model=OPENAI_JUDGE_MODEL,
+                messages=messages,
+                temperature=0.3,
+                max_tokens=800,
+            )
+        except BadRequestError as e:
+            text = f"[Judge BadRequestError: {e}]"
+            return text, False, None
+        except Exception as e:  # noqa: BLE001
+            text = f"[Judge Error: {e}]"
+            return text, False, None
+
+        text = resp.choices[0].message.content or ""
+
+        # JSON パースを試みる
+        parsed: Any
+        ok = True
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            # ```json ... ``` で返ってくるケースへの簡易対応
+            cleaned = text.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.strip("`")
+                cleaned = cleaned.replace("json", "", 1).strip()
+            try:
+                parsed = json.loads(cleaned)
+            except Exception:  # noqa: BLE001
+                ok = False
+                parsed = None
+
+        return text, ok, parsed
